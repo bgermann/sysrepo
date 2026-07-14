@@ -23,6 +23,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +41,35 @@
 #define srpntf_name "JSON notif" /**< plugin name */
 
 /**
+ * @brief Serialize timespec into packed fixed-size structure safely.
+ */
+static void
+srpntf_ts_serialize(const struct timespec *ts, srpjson_timespec_t *ts_serial)
+{
+    int64_t tv_sec = ts->tv_sec;
+    int32_t tv_nsec = ts->tv_nsec;
+
+    memcpy((char *)ts_serial + offsetof(srpjson_timespec_t, tv_sec), &tv_sec, sizeof tv_sec);
+    memcpy((char *)ts_serial + offsetof(srpjson_timespec_t, tv_nsec), &tv_nsec, sizeof tv_nsec);
+}
+
+/**
+ * @brief Deserialize packed fixed-size structure into timespec safely.
+ */
+static void
+srpntf_ts_deserialize(const srpjson_timespec_t *ts_serial, struct timespec *ts)
+{
+    int64_t tv_sec;
+    int32_t tv_nsec;
+
+    memcpy(&tv_sec, (const char *)ts_serial + offsetof(srpjson_timespec_t, tv_sec), sizeof tv_sec);
+    memcpy(&tv_nsec, (const char *)ts_serial + offsetof(srpjson_timespec_t, tv_nsec), sizeof tv_nsec);
+
+    ts->tv_sec = tv_sec;
+    ts->tv_nsec = tv_nsec;
+}
+
+/**
  * @brief Write notification into fd using vector IO.
  *
  * @param[in] notif_json Notification in JSON format.
@@ -55,8 +85,7 @@ srpntf_writev_notif(int fd, const char *notif_json, uint32_t notif_json_len, con
     struct iovec iov[3];
 
     /* serialize timespec with fixed-size fields */
-    ts_serial.tv_sec = notif_ts->tv_sec;
-    ts_serial.tv_nsec = notif_ts->tv_nsec;
+    srpntf_ts_serialize(notif_ts, &ts_serial);
 
     /* timestamp */
     iov[0].iov_base = &ts_serial;
@@ -101,8 +130,7 @@ srpntf_read_ts(int notif_fd, struct timespec *notif_ts)
         memset(notif_ts, 0, sizeof *notif_ts);
         return err_info;
     }
-    notif_ts->tv_sec = ts_serial.tv_sec;
-    notif_ts->tv_nsec = ts_serial.tv_nsec;
+    srpntf_ts_deserialize(&ts_serial, notif_ts);
     return NULL;
 }
 
@@ -474,8 +502,7 @@ srpntf_json_enable(const struct lys_module *mod)
 
     /* write the current real time */
     clock_gettime(CLOCK_REALTIME, &ts);
-    ts_serial.tv_sec = ts.tv_sec;
-    ts_serial.tv_nsec = ts.tv_nsec;
+    srpntf_ts_serialize(&ts, &ts_serial);
     if (write(fd, &ts_serial, sizeof ts_serial) != (ssize_t) sizeof ts_serial) {
         srplg_log_errinfo(&err_info, srpntf_name, NULL, SR_ERR_SYS, "Writing replay time failed (%s).", strerror(errno));
         goto cleanup;
@@ -817,8 +844,7 @@ srpntf_json_replay_start_get(const struct lys_module *mod, struct timespec *ts)
         srplg_log_errinfo(&err_info, srpntf_name, NULL, SR_ERR_INTERNAL, "Unexpected replay file size.");
         goto cleanup;
     } else {
-        ts->tv_sec = ts_serial.tv_sec;
-        ts->tv_nsec = ts_serial.tv_nsec;
+        srpntf_ts_deserialize(&ts_serial, ts);
     }
 
 cleanup:
