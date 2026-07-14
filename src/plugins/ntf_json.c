@@ -156,7 +156,11 @@ srpntf_read_notif(int notif_fd, struct ly_ctx *ly_ctx, struct lyd_node **notif)
     }
 
     /* size sanity check */
-    assert(notif_json_len <= (UINT32_MAX - 1));
+    if (!notif_json_len || (notif_json_len > (SRPJSON_NOTIF_FILE_MAX_SIZE * 1024U))) {
+        srplg_log_errinfo(&err_info, srpntf_name, NULL, SR_ERR_INTERNAL,
+                "Invalid notification payload length (%" PRIu32 ").", notif_json_len);
+        goto cleanup;
+    }
 
     /* read the notification */
     notif_json = malloc(notif_json_len + 1);
@@ -194,16 +198,31 @@ srpntf_skip_notif(int notif_fd)
 {
     sr_error_info_t *err_info = NULL;
     uint32_t notif_json_len;
+    char discard_buf[4096];
+    uint32_t skipped = 0, chunk;
 
     /* read notification length */
     if ((err_info = srpjson_read(srpntf_name, notif_fd, &notif_json_len, sizeof notif_json_len))) {
         return err_info;
     }
 
-    /* skip the notification */
-    if (lseek(notif_fd, notif_json_len, SEEK_CUR) == -1) {
-        srplg_log_errinfo(&err_info, srpntf_name, NULL, SR_ERR_SYS, "Lseek failed (%s).", strerror(errno));
+    if (!notif_json_len || (notif_json_len > (SRPJSON_NOTIF_FILE_MAX_SIZE * 1024U))) {
+        srplg_log_errinfo(&err_info, srpntf_name, NULL, SR_ERR_INTERNAL,
+                "Invalid notification payload length (%" PRIu32 ").", notif_json_len);
         return err_info;
+    }
+
+    /* skip the notification by reading and discarding data */
+    while (skipped < notif_json_len) {
+        chunk = notif_json_len - skipped;
+        if (chunk > sizeof discard_buf) {
+            chunk = sizeof discard_buf;
+        }
+
+        if ((err_info = srpjson_read(srpntf_name, notif_fd, discard_buf, chunk))) {
+            return err_info;
+        }
+        skipped += chunk;
     }
 
     return NULL;
@@ -583,7 +602,8 @@ srpntf_json_store(const struct lys_module *mod, const struct lyd_node *notif, co
         }
         file_size = st.st_size;
 
-        if (file_size + sizeof *notif_ts + sizeof notif_json_len + notif_json_len <= SRPJSON_NOTIF_FILE_MAX_SIZE * 1024) {
+        if (file_size + sizeof(srpjson_timespec_t) + sizeof notif_json_len + notif_json_len <=
+            SRPJSON_NOTIF_FILE_MAX_SIZE * 1024) {
             /* add the notification into the file if there is still space */
             if ((err_info = srpntf_writev_notif(fd, notif_json, notif_json_len, notif_ts))) {
                 goto cleanup;
