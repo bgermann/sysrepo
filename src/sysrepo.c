@@ -1710,6 +1710,10 @@ _sr_install_modules(sr_conn_ctx_t *conn, const char *search_dirs, const char *da
 error:
     /* revert lydmods data */
     for (i = 0; i < *new_mod_count; ++i) {
+        if (!(*new_mods)[i].ly_mod) {
+            continue;
+        }
+
         if ((*new_mods)[i].enable_features) {
             feat_set.objs = (void **)(*new_mods)[i].enable_features;
             for (j = 0; (*new_mods)[i].enable_features[j]; ++j) {}

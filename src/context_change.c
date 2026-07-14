@@ -924,6 +924,11 @@ sr_lycc_add_modules_revert(sr_conn_ctx_t *conn, sr_int_install_mod_t *new_mods, 
     for (i = 0; i < new_mod_count; ++i) {
         ly_mod = new_mods[i].ly_mod;
 
+        if (!ly_mod) {
+            /* Module may not have been parsed/loaded yet on early install failures. */
+            continue;
+        }
+
         /* uninstall module for all DS plugins */
         for (ds = 0; ds < SR_DS_READ_COUNT; ++ds) {
             if (!new_mods[i].installed[ds]) {
