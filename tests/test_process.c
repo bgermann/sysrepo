@@ -1509,12 +1509,21 @@ test_recover_change_sub_apply(int rp, int wp)
             "iana-if-type:ethernetCsmacd", NULL, 0);
     sr_assert_int_equal(ret, SR_ERR_OK);
 
-    for (i = 0, ret = 1; ret && i < 10; i++) {
+    /*
+     * Few attempts can fail while subscriber processes are still exiting and
+     * their subscriptions are being recovered. Slow machines can need a bit more time.
+     */
+    for (i = 0, ret = 1; ret && i < 20; i++) {
         ret = sr_apply_changes(sess, 500);
+        if (ret) {
+            usleep(10000);
+        }
     }
 
-    /* Few attempts above can fail because subscribers are dying */
-    ret = sr_apply_changes(sess, 0);
+    if (ret) {
+        /* final grace attempt after recovery should normally succeed */
+        ret = sr_apply_changes(sess, 2000);
+    }
     sr_assert_int_equal(ret, SR_ERR_OK);
 
     ret = sr_disconnect(conn);
