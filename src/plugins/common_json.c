@@ -89,7 +89,8 @@ srpjson_read(const char *plg_name, int fd, void *buf, size_t count)
         errno = 0;
         ret = read(fd, ((char *)buf) + have_read, count - have_read);
         if (!ret) {
-            /* EOF */
+            /* EOF, zero-fill the rest of the buffer */
+            memset((char *)buf + have_read, 0, count - have_read);
             return NULL;
         }
         if ((ret == -1) || ((ret < (signed)(count - have_read)) && errno && (errno != EINTR))) {

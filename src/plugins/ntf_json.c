@@ -198,8 +198,6 @@ srpntf_skip_notif(int notif_fd)
 {
     sr_error_info_t *err_info = NULL;
     uint32_t notif_json_len;
-    char discard_buf[4096];
-    uint32_t skipped = 0, chunk;
 
     /* read notification length */
     if ((err_info = srpjson_read(srpntf_name, notif_fd, &notif_json_len, sizeof notif_json_len))) {
@@ -212,17 +210,10 @@ srpntf_skip_notif(int notif_fd)
         return err_info;
     }
 
-    /* skip the notification by reading and discarding data */
-    while (skipped < notif_json_len) {
-        chunk = notif_json_len - skipped;
-        if (chunk > sizeof discard_buf) {
-            chunk = sizeof discard_buf;
-        }
-
-        if ((err_info = srpjson_read(srpntf_name, notif_fd, discard_buf, chunk))) {
-            return err_info;
-        }
-        skipped += chunk;
+    /* skip the notification */
+    if (lseek(notif_fd, notif_json_len, SEEK_CUR) == -1) {
+        srplg_log_errinfo(&err_info, srpntf_name, NULL, SR_ERR_SYS, "Lseek failed (%s).", strerror(errno));
+        return err_info;
     }
 
     return NULL;
